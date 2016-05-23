@@ -95,13 +95,14 @@
  *  container: string, id of svg's parent
  *  field1,2: the fields that is to be displayed in the graph
  */
-  var createGraph = function(container,field1, field2){
-
+  var createGraph = function(container,field1, field2,rawData){
+    var startTime = new Date(rawData[0].date);
+    var endTime = new Date(rawData[rawData.length-1].date);
     var x = d3.time.scale().domain([startTime, endTime]).range([0, w]);
     x.tickFormat(d3.time.format("%Y-%m-%d"));
     // Y scale will fit values from 0-10 within pixels h-0 (Note the inverted domain for the y-scale: bigger is up!)
-    var y1 = d3.scale.linear().domain([0, d3.max(data, function(d) { return d[field1[0]][field2[0]]; })]).range([h, 0]);
-    var y2 = d3.scale.linear().domain([0, d3.max(data, function(d) { return d[field1[1]][field2[1]]; })]).range([h, 0]);
+    var y1 = d3.scale.linear().domain([0, d3.max(rawData, function(d) { return d[field1[0]][field2[0]]; })]).range([h, 0]);
+    var y2 = d3.scale.linear().domain([0, d3.max(rawData, function(d) { return d[field1[1]][field2[1]]; })]).range([h, 0]);
     // Get unit and title of the legend
     var attrLeft = getDisplayAttr(field1[0],field2[0]),
         attrRight = getDisplayAttr(field1[1],field2[1]);
@@ -109,13 +110,13 @@
 
     // unify the axis if the two line are the same field
     if (attrLeft.unit == attrRight.unit) {
-      let max = d3.max(data);
+      let max = d3.max(rawData);
       if (max[field1[0]][field2[0]] > max[field1[1]][field2[1]]) y2 = y1;
       else y1 = y2;
     }
 
 
-    // create a line function that can convert data[] into x and y points
+    // create a line function that can convert rawData[] into x and y points
     var line1 = d3.svg.line()
       // assign the X function to plot our line as we wish
       .x(function(d,i) {
@@ -203,8 +204,8 @@
       }
       // add lines to the graphl
       // do this AFTER the axes above so that the line is above the tick-lines
-      graph.append("svg:path").attr("d", line1(data)).attr("class", "data1");
-      graph.append("svg:path").attr("d", line2(data)).attr("class", "data2");
+      graph.append("svg:path").attr("d", line1(rawData)).attr("class", "data1");
+      graph.append("svg:path").attr("d", line2(rawData)).attr("class", "data2");
 
     let hoverLineGroup = graph.append("svg:g")
                           .attr("class", "hover-line");
@@ -216,17 +217,83 @@
 
 		// hide it by default
 	  hoverLine.classed("hide", true);
+    $('#'+container).append("<button class='zoomBTN' style='display:none'>Zoom Out</button>");
+
+    //bind select-time-range feature to the chart
+    if(!container.includes('zoom')){
+      var svg = d3.select("#" + container);
+
+      function dragStart() {
+      	console.log("dragStart");
+        var hoverLineXOffset = m[3]+$("#" + container).offset().left;
+        var hoverLineYOffset = m[0]+$("#" + container).offset().top;
+        var mouseX = event.pageX - hoverLineXOffset;
+        var mouseY = event.pageY - hoverLineYOffset;
+        //debug("MouseOver graph [" + containerId + "] => x: " + mouseX + " y: " + mouseY + "  height: " + h + " event.clientY: " + event.clientY + " offsetY: " + event.offsetY + " pageY: " + event.pageY + " hoverLineYOffset: " + hoverLineYOffset)
+        if(mouseX >= 0 && mouseX <= w && mouseY >= 0 && mouseY <= h) {
+          selectDate.init(container,mouseX, mouseY);
+        }
+        selectDate.removePrevious();
+      }
+
+      function dragMove() {
+      	console.log("dragMove");
+        var hoverLineXOffset = m[3]+$("#" + container).offset().left;
+        var hoverLineYOffset = m[0]+$("#" + container).offset().top;
+        var mouseX = event.pageX - hoverLineXOffset;
+        var mouseY = event.pageY - hoverLineYOffset;
+
+    		if(mouseX >= 0 && mouseX <= w && mouseY >= 0 && mouseY <= h){
+        	var p = d3.mouse(this);
+          selectDate.update(mouseX, mouseY);
+        }
+      }
+      function dragEnd() {
+      	console.log("dragEnd",container);
+        var hoverLineXOffset = m[3]+$("#" + container).offset().left;
+        var hoverLineYOffset = m[0]+$("#" + container).offset().top;
+        var mouseX = event.pageX - hoverLineXOffset;
+        var mouseY = event.pageY - hoverLineYOffset;
+
+    		if(mouseX >= 0 && mouseX <= w && mouseY >= 0 && mouseY <= h){
+        	var finalAttributes = selectDate.getCurrentAttributes();
+        	console.dir(finalAttributes);
+        	if(finalAttributes.x2 - finalAttributes.x1 > 1){
+        		console.log("range selected");
+            //console.log(finalAttributes.x2,'-',finalAttributes.x1);
+        		// range selected
+        		d3.event.sourceEvent.preventDefault();
+        		selectDate.focus(container);
+        	}
+          else {
+        		console.log("single point");
+            // single point selected
+            $("#" + container).children(".zoomBTN").hide();
+            selectDate.remove();
+          }
+        }
+      }
+
+      var dragBehavior = d3.behavior.drag()
+          .on("drag", dragMove)
+          .on("dragstart", dragStart)
+          .on("dragend", dragEnd);
+
+      svg.call(dragBehavior);
+    }
   }
-  var setValueLabelsToLatest = function(container,status,field) {
-    displayValueLabelsForPositionX(container,w,status,field);
+  var setValueLabelsToLatest = function(container,status,field,rawData) {
+    displayValueLabelsForPositionX(container,w,status,field,rawData);
   }
 
-  var getValueForPositionXFromData = function(xPosition, dataSeriesIndex, displayName, field) {
+  var getValueForPositionXFromData = function(xPosition, dataSeriesIndex, displayName, field, rawData) {
+    var startTime = new Date(rawData[0].date);
+    var endTime = new Date(rawData[rawData.length-1].date);
     var k = displayName[dataSeriesIndex];
     var f = field[dataSeriesIndex];
     var x = d3.time.scale().domain([startTime, endTime]).range([0, w]);
     //TODO: bind each field correctly to the legend
-    var d = data;
+    var d = rawData;
     // get the date on x-axis for the current location
     var xValue = x.invert(xPosition);
 
@@ -250,13 +317,13 @@
     /**
       * Display the data values at position X in the legend value labels.
       */
-    var displayValueLabelsForPositionX = function(container, xPosition, status, field) {
+    var displayValueLabelsForPositionX = function(container, xPosition, status, field, rawData) {
       var dateToShow;
       var labelValueWidths = [];
       let graph = d3.select('#' + container);
       graph.selectAll("text.legend.value")
            .text(function(d, i) {
-             var valuesForX = getValueForPositionXFromData(xPosition, i, status, field);
+             var valuesForX = getValueForPositionXFromData(xPosition, i, status, field,rawData);
              dateToShow = valuesForX.date;
        	     return valuesForX.value;
            })
@@ -289,7 +356,7 @@
              .attr("font-size", legendFontSize);
 
         // recursively call until we get ourselves fitting
-        displayValueLabelsForPositionX(container,xPosition,status,field);
+        displayValueLabelsForPositionX(container,xPosition,status,field,rawData);
         return;
       }
 
@@ -308,6 +375,8 @@
 
   var createLegend = function(container, status, field) {
     // Get unit and title of the legend
+    $('#'+container).append("<input name='status' value='"+status+"'>");
+    $('#'+container).append("<input name='field' value='"+field+"'>");
     var attrLeft = getDisplayAttr(status[0],field[0]),
         attrRight = getDisplayAttr(status[1],field[1]);
 		// append a group to contain all lines
@@ -369,32 +438,32 @@
 				                   .text(date.toDateString());
 	}
   var graphSP = 'graphSP';
-  createGraph(graphSP,fieldSP['Status'],fieldSP['Field']);
+  createGraph(graphSP,fieldSP['Status'],fieldSP['Field'],data);
   createDateLabel(graphSP + '-transform');
   createLegend(graphSP + '-transform',fieldSP['Status'],fieldSP['Field']);
-  displayValueLabelsForPositionX(graphSP + '-transform',w,fieldSP['Status'],fieldSP['Field']);
+  displayValueLabelsForPositionX(graphSP + '-transform',w,fieldSP['Status'],fieldSP['Field'],data);
 
   var graphSD = 'graphSD';
-  createGraph(graphSD,fieldSD['Status'],fieldSD['Field']);
+  createGraph(graphSD,fieldSD['Status'],fieldSD['Field'],data);
   createDateLabel(graphSD + '-transform');
   createLegend(graphSD + '-transform',fieldSD['Status'],fieldSD['Field']);
-  displayValueLabelsForPositionX(graphSD + '-transform',w,fieldSD['Status'],fieldSD['Field']);
+  displayValueLabelsForPositionX(graphSD + '-transform',w,fieldSD['Status'],fieldSD['Field'],data);
 
   var graphTD = 'graphTD';
-  createGraph(graphTD,fieldTD['Status'],fieldTD['Field']);
+  createGraph(graphTD,fieldTD['Status'],fieldTD['Field'],data);
   createDateLabel(graphTD + '-transform');
   createLegend(graphTD + '-transform',fieldTD['Status'],fieldTD['Field']);
-  displayValueLabelsForPositionX(graphTD + '-transform',w,fieldTD['Status'],fieldTD['Field']);
+  displayValueLabelsForPositionX(graphTD + '-transform',w,fieldTD['Status'],fieldTD['Field'],data);
 
   var graphTT = 'graphTT';
-  createGraph(graphTT,fieldTT['Status'],fieldTT['Field']);
+  createGraph(graphTT,fieldTT['Status'],fieldTT['Field'],data);
   createDateLabel(graphTT + '-transform');
   createLegend(graphTT + '-transform',fieldTT['Status'],fieldTT['Field']);
-  displayValueLabelsForPositionX(graphTT + '-transform',w,fieldTT['Status'],fieldTT['Field']);
+  displayValueLabelsForPositionX(graphTT + '-transform',w,fieldTT['Status'],fieldTT['Field'],data);
   /**
 	 * Called when a user mouses over the graph
    */
-	var handleMouseOverGraph = function(container,event,status,field, hoverLineOffset) {
+	var handleMouseOverGraph = function(container,event,status,field, hoverLineOffset,rawData) {
 
     let graph = d3.select('#' + container);
 		var mouseX = event.pageX - hoverLineOffset[0];
@@ -408,20 +477,20 @@
 			// set position of hoverLine
 			hoverLine.attr("x1", mouseX).attr("x2", mouseX);
 
-			displayValueLabelsForPositionX(container,mouseX,status,field);
+			displayValueLabelsForPositionX(container,mouseX,status,field,rawData);
 
 		} else {
 			// proactively act as if we've left the area since we're out of the bounds we want
-			handleMouseOutGraph(container,event,status,field);
+			handleMouseOutGraph(container,event,status,field,rawData);
 		}
 	}
 
-  var handleMouseOutGraph = function(container,event,status,field) {
+  var handleMouseOutGraph = function(container,event,status,field,rawData) {
 		// hide the hover-line
     let hoverLine = d3.select('#' + container + '-hover');
 		hoverLine.classed("hide", true);
 
-		setValueLabelsToLatest(container,status,field);
+		setValueLabelsToLatest(container,status,field,rawData);
 
 		//debug("MouseOut graph [" + containerId + "] => " + mouseX + ", " + mouseY)
 
@@ -432,25 +501,25 @@
     var hoverLineXOffset = m[3]+$('#graphSP').offset().left;
     var hoverLineYOffset = m[0]+$('#graphSP').offset().top;
     var hoverLine = [hoverLineXOffset,hoverLineYOffset];
-		handleMouseOverGraph('graphSP',event,fieldSP['Status'],fieldSP['Field'],hoverLine);
+		handleMouseOverGraph('graphSP',event,fieldSP['Status'],fieldSP['Field'],hoverLine,data);
 	})
   $('#graphSD').mousemove(function(event) {
     var hoverLineXOffset = m[3]+$('#graphSD').offset().left;
     var hoverLineYOffset = m[0]+$('#graphSD').offset().top;
     var hoverLine = [hoverLineXOffset,hoverLineYOffset];
-		handleMouseOverGraph('graphSD',event,fieldSD['Status'],fieldSD['Field'],hoverLine);
+		handleMouseOverGraph('graphSD',event,fieldSD['Status'],fieldSD['Field'],hoverLine,data);
 	})
   $('#graphTD').mousemove(function(event) {
     var hoverLineXOffset = m[3]+$('#graphTD').offset().left;
     var hoverLineYOffset = m[0]+$('#graphTD').offset().top;
     var hoverLine = [hoverLineXOffset,hoverLineYOffset];
-			handleMouseOverGraph('graphTD',event,fieldTD['Status'],fieldTD['Field'],hoverLine);
+			handleMouseOverGraph('graphTD',event,fieldTD['Status'],fieldTD['Field'],hoverLine,data);
 	})
   $('#graphTT').mousemove(function(event) {
     var hoverLineXOffset = m[3]+$('#graphTT').offset().left;
     var hoverLineYOffset = m[0]+$('#graphTT').offset().top;
     var hoverLine = [hoverLineXOffset,hoverLineYOffset];
-		handleMouseOverGraph('graphTT',event,fieldTT['Status'],fieldTT['Field'],hoverLine);
+		handleMouseOverGraph('graphTT',event,fieldTT['Status'],fieldTT['Field'],hoverLine,data);
 	})
 
   //TODO: adding a drag event to drag select a time range
@@ -476,6 +545,7 @@
 
   var selectDate = {
     element   : null,
+    previousElement: null,
     currentX  : 0,
     currentY  : 0,
     originX   : 0,
@@ -506,9 +576,8 @@
   	    y2  : height
   		};
     },
-    init  : function(newX, newY){
-
-      let graph = d3.select("#graphTT");
+    init  : function(container,newX, newY){
+      let graph = d3.select("#" + container);
       let svg = graph.select('svg');
       var rectElement = svg.append("svg:rect")
   		    .attr({
@@ -522,8 +591,8 @@
   		    .classed("selection", true);
   	  this.setElement(rectElement);
       rectElement.style("stroke", "#DE695B")
-      .style("stroke-width", "2.5")
-      .style("opacity", "0.4");
+                .style("stroke-width", "2.5")
+                .style("opacity", "0.4");
   		this.originX = newX;
   		this.originY = newY;
   		this.update(newX, newY);
@@ -533,63 +602,101 @@
   		this.currentY = newY;
   		this.element.attr(this.getNewAttributes());
     },
-    focus : function(){
+    focus : function(container){
       this.element
             .style("stroke", "#DE695B")
             .style("stroke-width", "2.5")
             .style("opacity", "0.4");
+      var x = d3.time.scale().domain([startTime, endTime]).range([0, w]);
+      //var svg = d3.select("#graphTT-transform").transition();
+      //var y1 = d3.scale.linear().domain([0, d3.max(data, function(d) { return d[fieldTT['Status'][0]][fieldTT['Field'][0]]; })]).range([h, 0]);
+/*
+      var line1 = d3.svg.line()
+        // assign the X function to plot our line as we wish
+        .x(function(d,i) {
+          // return the X coordinate where we want to plot this datapoint
+          //console.log('i:',i);
+          return x(startTime.getTime() + (timeStep*i));
+        })
+        .y(function(d) {
+          // return the Y coordinate where we want to plot this datapoint
+          //console.log(d[fieldTT['Status'][0]][fieldTT['Field'][0]]);
+          return y1(d[fieldTT['Status'][0]][fieldTT['Field'][0]]); // use the 1st index of data (for example, get 20 from [20,13])
+        });
+
+*/
+      //var xAxis = d3.svg.axis().scale(x).tickSize(-h).tickSubdivide(1);
+      //var yAxisLeft = d3.svg.axis().scale(y1).ticks(6).orient("left");
+
+      $("#" + container).children(".zoomBTN").show();
+
+      this.previousElement = this.element;
     },
     remove: function() {
     	this.element.remove();
     	this.element = null;
+    },
+    removePrevious: function(){
+      if(this.previousElement) {
+    		this.previousElement.remove();
+      }
     }
   }
 
-  var svg = d3.select("#graphTT");
 
-  function dragStart() {
-  	console.log("dragStart");
-    var hoverLineXOffset = m[3]+$('#graphTT').offset().left;
-    var hoverLineYOffset = m[0]+$('#graphTT').offset().top;
-    var mouseX = event.pageX - hoverLineXOffset;
-    var mouseY = event.pageY - hoverLineYOffset;
-    //debug("MouseOver graph [" + containerId + "] => x: " + mouseX + " y: " + mouseY + "  height: " + h + " event.clientY: " + event.clientY + " offsetY: " + event.offsetY + " pageY: " + event.pageY + " hoverLineYOffset: " + hoverLineYOffset)
-    if(mouseX >= 0 && mouseX <= w && mouseY >= 0 && mouseY <= h) {
-      selectDate.init(mouseX, mouseY);
+
+  $(".zoomBTN").click(function(){
+
+    //console.log(selectDate.getCurrentAttributes().x1,selectDate.getCurrentAttributes().x2);
+    var x = d3.time.scale().domain([startTime, endTime]).range([0, w]);
+    var hoverLineXOffset = m[3];
+    var startPos = selectDate.getCurrentAttributes().x1 - hoverLineXOffset;
+    var endPos = selectDate.getCurrentAttributes().x2 - hoverLineXOffset;
+
+    //TODO: bind each field correctly to the legend
+    var d = data;
+    // get the date on x-axis for the current location
+    var start = x.invert(startPos);
+    var end = x.invert(endPos);
+    // Calculate the value from this date by determining the 'index'
+    // within the data array that applies to this value
+    var indexL = (start.getTime() - startTime) / timeStep;
+    var indexR = (end.getTime() - endTime) / timeStep;
+    if(indexL >= d.length) {
+      indexL = d.length-1;
     }
-  }
-
-  function dragMove() {
-  	console.log("dragMove");
-    var hoverLineXOffset = m[3]+$('#graphTT').offset().left;
-    var hoverLineYOffset = m[0]+$('#graphTT').offset().top;
-    var mouseX = event.pageX - hoverLineXOffset;
-    var mouseY = event.pageY - hoverLineYOffset;
-  	var p = d3.mouse(this);
-    selectDate.update(mouseX, mouseY);
-  }
-  function dragEnd() {
-  	console.log("dragEnd");
-  	var finalAttributes = selectDate.getCurrentAttributes();
-  	console.dir(finalAttributes);
-  	if(finalAttributes.x2 - finalAttributes.x1 > 1){
-  		console.log("range selected");
-      console.log(finalAttributes.x2,'-',finalAttributes.x1);
-  		// range selected
-  		d3.event.sourceEvent.preventDefault();
-  		selectDate.focus();
-  	}
-    else {
-  		console.log("single point");
-      // single point selected
-      selectDate.remove();
+    if(indexR >= d.length) {
+      indexR = d.length-1;
     }
-  }
+    // The date we're given is interpolated so we have to round off to get the nearest
+    // index in the data array for the xValue we're given.
+    // Once we have the index, we then retrieve the data from the d[] array
+    indexL = Math.round(indexL);
+    indexR = Math.round(indexR);
 
-  var dragBehavior = d3.behavior.drag()
-      .on("drag", dragMove)
-      .on("dragstart", dragStart)
-      .on("dragend", dragEnd);
+    $(this).parent().next('.dGraph').remove();
+    var parentID = $(this).parent().attr('id');
+    $("<div id='" + parentID + "-zoom" + "' class='dGraph'></div>").insertAfter("#" + parentID);
+    //var status = $(this).parent().children("input[name~='status']").val();
+    var status = $("#" + parentID + " :input[name='status']").val().split(',');
+    var field = $("#" + parentID + " :input[name='field']").val().split(',');
+    var graphZoom = parentID + '-zoom';
+    console.log('before')
+    createGraph(graphZoom,status,field,data.slice(indexL,indexR));
+    createDateLabel(graphZoom + '-transform');
+    createLegend(graphZoom + '-transform',status,field);
+    displayValueLabelsForPositionX(graphZoom + '-transform',w,status,field,data.slice(indexL,indexR));
 
-  svg.call(dragBehavior);
-  console.log("123");
+    $('#'+graphZoom).mousemove(function(event) {
+      var hoverLineXOffset = m[3]+$('#'+graphZoom).offset().left;
+      var hoverLineYOffset = m[0]+$('#'+graphZoom).offset().top;
+      var hoverLine = [hoverLineXOffset,hoverLineYOffset];
+      handleMouseOverGraph(graphZoom,event,status,field,hoverLine,data.slice(indexL,indexR));
+    });
+    $('#' + graphZoom).append("<button class='delBTN'>Delete</button>")
+    $('#' + graphZoom).on('click','.delBTN',function(event){
+      $(this).parent().remove();
+    });
+    selectDate.remove();
+    $("#" + parentID).children(".zoomBTN").hide();
+  });
